@@ -7,31 +7,50 @@ use strict;
 
 AE::AdHoc - Simplified interface for tests/examples of AnyEvent-related code.
 
+=head1 NON-DESCRIPTION
+
+This module is NOT for introducing oneself to AnyEvent, despite the mention of
+"simplified". More over, it REQUIRES knowledge of what a conditional variable,
+or simply "condvar", is. See L<Anyevent::Intro>.
+
+This module is NOT for building other modules, it's for running them with
+minimal typing.
+
 =head1 SYNOPSIS
 
-Suppose we need to test some AnyEvent-related code. To avoid hanging up,
-we add a timeout. The resulting code is like:
+Suppose we have a subroutine named C<do_stuff( @args, $subref )>
+that is designed to run under AnyEvent. As do_stuff may have to wait for
+some external events to happen, it does not return a value right away.
+Instead, it will call C<$subref-E<gt>( $results )> when stuff is done.
+
+Now we need to test do_stuff, so we set up an event loop. We also need a timer,
+because a test that runs forever is annoying. So the script goes like this:
 
     use AnyEvent;
+
+    # set up event loop
     my $cv = AnyEvent->condvar;
     my $timer = AnyEvent->timer(
         after => 10, cb => sub { $cv->croak("Timeout"); }
     );
-    do_something(
-        sub{ $cv->send(shift); }, sub{ $cv->croak(shift); }
-    );
+
+    do_stuff( @args, sub{ $cv->send(shift); } );
+
+    # run event loop, get rid of timer
     my $result = $cv->recv();
     undef $timer;
-    analyze_do_something( $result );
+
+    # finally
+    analyze_results( $result );
 
 Now, the same with AE::AdHoc:
 
     use AE::AdHoc;
 
     my $result = ae_recv {
-         do_something( ae_send, ae_croak );
+         do_stuff( @args, ae_send );
     } 10; # timeout
-    analyze_do_something( $result );
+    analyze_results( $result );
 
 =head1 EXPORT
 
@@ -45,7 +64,7 @@ responsible for current event loop. See C<condvar> section of L<AnyEvent>.
 
 =cut
 
-our $VERSION = '0.08';
+our $VERSION = '0.0804';
 
 use Carp;
 use AnyEvent::Strict;
@@ -63,7 +82,7 @@ BEGIN {
 The main entry point of the module.
 
 Run CODE block, enter event loop and wait for $timeout seconds for callbacks
-set up in CODE to fire, than die. Return whatever was sent via C<ae_send>.
+set up in CODE to fire, then die. Return whatever was sent via C<ae_send>.
 
 $timeout must be a nonzero real number. Negative value means "run forever".
 $timeout=0 would be ambigous, so it's excluded.
@@ -127,9 +146,9 @@ sub ae_recv (&@) { ## no critic
 
 Create callback for normal event loop ending.
 
-Returns a sub that feeds its arguments to C<$cv->send()>. Arguments given to
+Returns a sub that feeds its arguments to C<$cv-E<gt>send()>. Arguments given to
 the function itself are prepended, as in
-C<$cv->send(@fixed_args, @callback_args)>.
+C<$cv-E<gt>send(@fixed_args, @callback_args)>.
 
 B<NOTE> that ae_recv will return all sent data "as is" in list context, and
 only first argument in scalar context.
@@ -271,6 +290,19 @@ Perform CODE after entering the event loop via ae_recv
 
 CODE will NOT run after current event loop is terminated (see ae_recv).
 
+Options may include:
+
+=over
+
+=item * after - delay before code execution (in seconds, may be fractional)
+
+=item * interval - delay between code executions (in seconds, may be fractional)
+
+=item * count - how many times to execute. If zero or omitted, means unlimited
+execution when interval is given, and just one otherwise.
+
+=back
+
 =cut
 
 sub ae_action (&@) { ## no critic
@@ -304,6 +336,38 @@ sub ae_action (&@) { ## no critic
 	return;
 };
 
+=head1 ERROR HANDLING
+
+Dying within event loop is a bad idea, so we issue B<warnings> and write
+errors to magic variables. It is up to the user to check these variables.
+
+=over
+
+=item * C<$AE::AdHoc::errstr> - last error (as in L<::DBI>).
+
+=item * C<@AE::AdHoc::errors> - all errors.
+
+=item * C<$AE::AdHoc::warnings> - set this to false to suppress warnings.
+
+=back
+
+=cut
+
+our @errors;
+our $errstr;
+our $warnings = 1; # by default, complain loudly
+
+sub _error {
+	$errstr = shift;
+	push @errors, $errstr;
+	carp __PACKAGE__.": ERROR: $errstr" if $warnings;
+	return;
+};
+sub _croak {
+	_error(@_);
+	croak shift;
+};
+
 =head1 CAVEATS
 
 This module is still under heavy development, and is subject to change.
@@ -327,41 +391,7 @@ called in a callback itself. For instance, this will always work the same:
         callback => sub { ae_send->(@_); },
 	# ...
 
-=head2 Error handling
-
-Dying within event loop is a bad idea, so we issue B<warnings> and write
-errors to magic variables. It is up to the user to check these variables.
-
-=over
-
-=item * C<$AE::AdHoc::errstr> - last error (as in L<::DBI>).
-
-=item * C<@AE::AdHoc::errors> - all errors.
-
-=item * C<$AE::AdHoc::warnings> - set this to false to suppress warnings.
-
-=back
-
 =cut
-
-# Several in-house subs: error handling
-# Dying inside event-loop is a bad idea, so we add errstr & @errors
-#   and warnings
-
-our @errors;
-our $errstr;
-our $warnings = 1; # by default, complain loudly
-
-sub _error {
-	$errstr = shift;
-	push @errors, $errstr;
-	carp __PACKAGE__.": ERROR: $errstr" if $warnings;
-	return;
-};
-sub _croak {
-	_error(@_);
-	croak shift;
-};
 
 =head1 AUTHOR
 

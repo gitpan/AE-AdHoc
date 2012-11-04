@@ -16,12 +16,12 @@ t/14-xargs.t
 t/15-goals.t
 t/16-goals2.t
 t/17-goals-leftover.t
-t/18-all-leftover.t
-t/19-soft-timeout.t
-t/20-ae_action.t
 t/boilerplate.t
 t/manifest.t
 t/pod-coverage.t
 t/pod.t
+t/18-all-leftover.t
+t/19-soft-timeout.t
+t/20-ae_action.t
 META.yml                                 Module YAML meta-data (added by MakeMaker)
 META.json                                Module JSON meta-data (added by MakeMaker)
